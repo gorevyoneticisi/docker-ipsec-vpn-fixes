@@ -218,7 +218,7 @@ VPN_PUBLIC_IP=your_ip_or_domain
 ## Usage
 
 ```bash
-git clone https://github.com/yourusername/docker-ipsec-vpn-fixes.git
+git clone https://github.com/gorevyoneticisi/docker-ipsec-vpn-fixes.git
 cd docker-ipsec-vpn-fixes
 docker compose up -d --build
 ```
