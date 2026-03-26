@@ -29,6 +29,19 @@ Result: connection fails silently
 
 ---
 
+## Why This Project Exists
+
+The original hwdsl2/ipsec-vpn-server image regenerates its configuration files on every restart.
+
+This breaks manual fixes for:
+
+- Windows L2TP (MPPE requirement)
+- Android IKEv2 (identity mismatch)
+
+This project provides a persistent, automated solution using a custom Docker wrapper.
+
+---
+
 ## Prerequisites
 
 - `YOUR_CONTAINER_NAME` (`docker ps`)
@@ -134,12 +147,12 @@ VPN_PID=$!
 
 sleep 10
 
-# Windows fix
+# Windows L2TP/IPsec Fix
 printf "require-mschap-v2\nrefuse-pap\nrefuse-chap\nrefuse-mschap\nnodeflate\nnobsdcomp\nmtu 1280\nmru 1280\n" > /etc/ppp/options.xl2tpd
 killall xl2tpd
 xl2tpd
 
-# Android fix
+# Android IKEv2/IPsec PSK Fix
 TARGET_IP=${VPN_PUBLIC_IP:-"127.0.0.1"}
 
 cat > /etc/ipsec.d/ikev2.conf <<EOF
@@ -221,7 +234,28 @@ VPN_PUBLIC_IP=your_ip_or_domain
 git clone https://github.com/gorevyoneticisi/docker-ipsec-vpn-fixes.git
 cd docker-ipsec-vpn-fixes
 docker compose up -d --build
+cp .env.example vpn.env
+nano vpn.env
 ```
+
+## Security
+
+Do NOT commit your vpn.env file.
+
+It contains sensitive credentials.
+
+Use .env.example as a template instead.
+
+---
+
+
+## Before vs After
+
+| Scenario | Default Image | This Project |
+|----------|-------------|-------------|
+| Windows L2TP | Fails (MPPE issue) | Works |
+| Android IKEv2 | Fails (identity mismatch) | Works |
+| Restart container | Fix lost | Fix persists |
 
 ---
 
