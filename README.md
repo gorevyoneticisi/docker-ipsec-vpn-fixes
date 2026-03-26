@@ -233,9 +233,13 @@ VPN_PUBLIC_IP=your_ip_or_domain
 ```bash
 git clone https://github.com/gorevyoneticisi/docker-ipsec-vpn-fixes.git
 cd docker-ipsec-vpn-fixes
-docker compose up -d --build
+
+# 1. Create and configure your environment file
 cp .env.example vpn.env
 nano vpn.env
+
+# 2. Build and deploy the VPN
+docker compose up -d --build
 ```
 
 ## Security
