@@ -1,8 +1,8 @@
-# Docker IPsec VPN Fixes for Windows and Android
+# Docker IPsec VPN Fixes (Windows L2TP & Android IKEv2)
 
-If you are running a Dockerized IPsec VPN server (such as `hwdsl2/ipsec-vpn-server`) and your Windows or Android devices fail to connect, the issue is usually not misconfiguration on your part. It comes from how these operating systems interact with the default Docker setup.
+Fixes common issues with Docker IPsec VPN (`hwdsl2/ipsec-vpn-server`), including Windows L2TP connection drops and Android IKEv2/IPSec PSK failures.
 
-This guide explains the root causes and provides exact server-side fixes.
+Covers MPPE issues, leftid mismatch, and working server-side configurations, plus a persistent automated solution.
 
 ---
 
@@ -10,66 +10,61 @@ This guide explains the root causes and provides exact server-side fixes.
 
 ### Windows (L2TP/IPsec)
 
-- Windows requires an internal encryption layer called MPPE-128.
-- Many VPS kernels do not include the `ppp_mppe` module.
-- As a result, the VPN server cannot satisfy Windows requirements.
+- Requires MPPE-128 encryption
+- Many kernels lack `ppp_mppe`
+- Server cannot satisfy Windows requirements
 
-Result: the connection drops immediately.
+Result: connection drops immediately
 
-### Android (IKEv2)
+### Android (IKEv2/IPsec)
 
-- Modern Android versions no longer support L2TP.
-- IKEv2 must be used instead.
-- Default Docker configuration:
-  - Requires certificate authentication
-  - Uses internal Docker IP (for example 172.17.0.2)
+- L2TP not supported on modern Android
+- Default container:
+  - Requires certificates
+  - Uses internal Docker IP (e.g. 172.17.0.2)
 
-Android expects a public identity. When it detects a mismatch, it rejects the connection silently.
+Android expects a public identity and rejects mismatches
 
-Result: connection fails without a clear error.
+Result: connection fails silently
 
 ---
 
 ## Prerequisites
 
-Before applying the fixes, collect the following:
-
-- `YOUR_CONTAINER_NAME` (use `docker ps`)
-- `YOUR_PUBLIC_IP_OR_DOMAIN` (for example `123.123.123.123` or `example.duckdns.org`)
-- `YOUR_PSK` (pre-shared key)
+- `YOUR_CONTAINER_NAME` (`docker ps`)
+- `YOUR_PUBLIC_IP_OR_DOMAIN`
+- `YOUR_PSK`
 
 ---
 
-# Fix 1: Windows (L2TP/IPsec)
+# Manual Fixes
 
-## Step 1: Update Server Configuration
+## Fix 1: Windows L2TP/IPsec Connection Drop
+
+### Update Server Configuration
 
 ```bash
 docker exec -it YOUR_CONTAINER_NAME sh -c 'printf "require-mschap-v2\nrefuse-pap\nrefuse-chap\nrefuse-mschap\nnodeflate\nnobsdcomp\nmtu 1280\nmru 1280\n" > /etc/ppp/options.xl2tpd'
 ```
 
-## Step 2: Restart Service
+### Restart Service
 
 ```bash
 docker exec -it YOUR_CONTAINER_NAME killall xl2tpd
 ```
 
-## Step 3: Configure Windows Client
+### Configure Windows Client
 
-1. Press Win + R and run `ncpa.cpl`
-2. Right-click your VPN connection and open Properties
-3. Open the Security tab
-4. Apply the following settings:
-   - Data encryption: Optional encryption
-   - Allowed protocols: Microsoft CHAP Version 2 (MS-CHAP v2) only
+- Run `ncpa.cpl`
+- VPN Properties → Security
+- Data encryption: Optional
+- Protocols: MS-CHAP v2 only
 
 ---
 
-# Fix 2: Android (IKEv2/IPsec PSK)
+## Fix 2: Android IKEv2/IPsec PSK Connection Fix
 
-## Step 1: Rewrite IKEv2 Configuration
-
-Replace `YOUR_PUBLIC_IP_OR_DOMAIN` before executing:
+### Rewrite IKEv2 Configuration
 
 ```bash
 docker exec -it YOUR_CONTAINER_NAME sh -c 'cat > /etc/ipsec.d/ikev2.conf <<EOF
@@ -93,58 +88,160 @@ conn ikev2-psk
 EOF'
 ```
 
-## Step 2: Restart IPsec
+### Restart IPsec
 
 ```bash
 docker exec -it YOUR_CONTAINER_NAME ipsec restart
 ```
 
-## Step 3: Configure Android Client
-
-1. Open Settings → Network & Internet → VPN
-2. Add a new VPN profile
-
-Use the following values:
+### Android Client Setup
 
 - Type: IKEv2/IPSec PSK
-- Server address: YOUR_PUBLIC_IP_OR_DOMAIN
-- IPSec identifier: same as server address
-- Pre-shared key: YOUR_PSK
+- Server: YOUR_PUBLIC_IP_OR_DOMAIN
+- Identifier: SAME as server
+- PSK: YOUR_PSK
 
-Note: The identifier must exactly match `leftid` from the configuration.
+---
+
+# Persistent Automated Fix (Recommended)
+
+The `hwdsl2/ipsec-vpn-server` image regenerates configs on every restart, overwriting manual fixes.
+
+This solution injects a wrapper script to apply fixes automatically at startup.
+
+---
+
+## Project Structure
+
+```
+.
+├── Dockerfile
+├── docker-compose.yml
+├── apply-fixes.sh
+├── vpn.env
+└── README.md
+```
+
+---
+
+## Step 1: Wrapper Script (apply-fixes.sh)
+
+```bash
+#!/bin/bash
+
+/opt/src/run.sh "$@" &
+VPN_PID=$!
+
+sleep 10
+
+# Windows fix
+printf "require-mschap-v2\nrefuse-pap\nrefuse-chap\nrefuse-mschap\nnodeflate\nnobsdcomp\nmtu 1280\nmru 1280\n" > /etc/ppp/options.xl2tpd
+killall xl2tpd
+xl2tpd
+
+# Android fix
+TARGET_IP=${VPN_PUBLIC_IP:-"127.0.0.1"}
+
+cat > /etc/ipsec.d/ikev2.conf <<EOF
+conn ikev2-psk
+  auto=add
+  ikev2=insist
+  rekey=no
+  pfs=no
+  encapsulation=yes
+  left=%defaultroute
+  leftid=$TARGET_IP
+  leftsubnet=0.0.0.0/0
+  right=%any
+  rightaddresspool=192.168.43.10-192.168.43.250
+  authby=secret
+  modecfgdns="8.8.8.8 8.8.4.4"
+  dpddelay=30
+  retransmit-timeout=300s
+  ike=aes256-sha2,aes128-sha2,aes256-sha1,aes128-sha1
+  phase2alg=aes_gcm-null,aes128-sha1,aes256-sha1,aes128-sha2,aes256-sha2
+EOF
+
+ipsec restart
+
+wait $VPN_PID
+```
+
+---
+
+## Step 2: Dockerfile
+
+```dockerfile
+FROM hwdsl2/ipsec-vpn-server:latest
+
+COPY apply-fixes.sh /apply-fixes.sh
+RUN chmod +x /apply-fixes.sh
+
+CMD ["/apply-fixes.sh"]
+```
+
+---
+
+## Step 3: docker-compose.yml
+
+```yaml
+services:
+  ipsec-vpn-server:
+    build: .
+    container_name: ipsec-vpn-server
+    restart: always
+    env_file:
+      - ./vpn.env
+    ports:
+      - "500:500/udp"
+      - "4500:4500/udp"
+    privileged: true
+    cap_add:
+      - NET_ADMIN
+    volumes:
+      - /lib/modules:/lib/modules:ro
+```
+
+---
+
+## Step 4: Environment File
+
+```env
+VPN_IPSEC_PSK=your_psk
+VPN_USER=user
+VPN_PASSWORD=password
+VPN_PUBLIC_IP=your_ip_or_domain
+```
+
+---
+
+## Usage
+
+```bash
+git clone https://github.com/yourusername/docker-ipsec-vpn-fixes.git
+cd docker-ipsec-vpn-fixes
+docker compose up -d --build
+```
 
 ---
 
 ## Apple Devices
 
-iOS, iPadOS, and macOS typically support L2TP/IPsec without strict MPPE enforcement.
-
-They usually work with:
-
-- Server address
-- Username
-- Password
-- PSK (entered as “Secret”)
-
-No additional changes are required.
+Works without modification using standard L2TP/IPsec settings
 
 ---
 
 ## Summary
 
-| Platform | Issue                   | Solution                                        |
-|----------|-------------------------|-------------------------------------------------|
-| Windows  | MPPE requirement        | Adjust PPP config and allow optional encryption |
-| Android  | IKEv2 identity mismatch | Rewrite config and set public identifier        |
+| Platform | Issue | Solution |
+|----------|------|----------|
+| Windows  | MPPE required | Adjust PPP config |
+| Android  | Identity mismatch | Rewrite IKEv2 config |
+| All      | Config resets | Use wrapper script |
 
 ---
 
-## Additional Checks
+## Keywords
 
-If connections still fail, verify:
-
-- Firewall allows UDP ports 500, 4500, and 1701
-- Correct PSK is used
-- Server address and identifier match exactly
-- Container is running and restarted after changes
+docker ipsec vpn, hwdsl2 vpn, ipsec vpn docker, l2tp windows vpn fix, ikev2 android vpn fix, vpn not connecting docker
 
