@@ -1,0 +1,49 @@
+name: ipsec-vpn
+services:
+  main_app:
+    cpu_shares: 10
+    command: []
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+    environment:
+      - VPN_IPSEC_PSK=YOUR_PSK
+      - VPN_PASSWORD=YOUR_PASSWORKD
+      - VPN_USER=YOUR_USERNAME
+    image: hwdsl2/ipsec-vpn-server:latest
+    labels:
+      icon: https://icon.casaos.io/main/all/ipsec-vpn-server.png
+    ports:
+      - target: 500
+        published: "500"
+        protocol: udp
+      - target: 4500
+        published: "4500"
+        protocol: udp
+    privileged: true
+    restart: unless-stopped
+    volumes:
+      - type: bind
+        source: /lib/modules
+        target: /lib/modules
+      - type: bind
+        source: /DATA/AppData/ipsec-vpn
+        target: /etc/ipsec.d
+    devices: []
+    cap_add: []
+    network_mode: bridge
+    container_name: ""
+    hostname: ""
+x-casaos:
+  author: self
+  category: self
+  hostname: ""
+  icon: https://icon.casaos.io/main/all/ipsec-vpn-server.png
+  index: /
+  is_uncontrolled: false
+  port_map: ""
+  scheme: http
+  store_app_id: ipsec-vpn
+  title:
+    custom: IPsec VPN
