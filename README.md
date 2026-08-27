@@ -1,5 +1,17 @@
 # Docker IPsec VPN Fixes (Windows L2TP & Android IKEv2)
 
+> [!IMPORTANT]
+> **Archived legacy workaround.** Current releases of
+> [`hwdsl2/ipsec-vpn-server`](https://github.com/hwdsl2/docker-ipsec-vpn-server)
+> natively support IPsec/L2TP and certificate-based IKEv2, generate Android
+> client profiles, and persist IKEv2 data. Use the maintained upstream image and
+> documentation for new deployments.
+>
+> This repository is retained only as a historical record. Its startup wrapper
+> modifies generated configuration after a fixed delay and tracks the mutable
+> `latest` image tag, so it should not be treated as a current deployment
+> recommendation.
+
 Fixes common issues with Docker IPsec VPN (`hwdsl2/ipsec-vpn-server`), including Windows L2TP connection drops and Android IKEv2/IPSec PSK failures.
 
 Covers MPPE issues, leftid mismatch, and working server-side configurations, plus a persistent automated solution.
